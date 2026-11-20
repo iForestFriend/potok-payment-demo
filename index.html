@@ -1,0 +1,890 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101c34">
+  <meta name="color-scheme" content="light">
+  <title>Поток — согласование платежей</title>
+  <style>
+    :root {
+      --ink:#192641; --muted:#5e6c83; --faint:#e1e7f0; --paper:#fff;
+      --bg:#f5f7fb; --nav:#101c34; --accent:#3e56de; --accent-dark:#3046c6;
+      --radius:12px; --side:208px;
+      font: 16px/1.45 'Segoe UI', system-ui, sans-serif;
+      color:var(--ink); background:var(--bg);
+    }
+    *, *::before, *::after { box-sizing:border-box; }
+    body, h1, h2, h3, p, dl, dd { margin:0; }
+    button, input, select, textarea { font:inherit; color:inherit; }
+    button { cursor:pointer; }
+    button:disabled { opacity:.65; cursor:wait; }
+    :focus-visible { outline:3px solid #8596ff; outline-offset:3px; }
+    .sr { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+    [hidden] { display:none !important; }
+    .shell { display:grid; grid-template-columns:var(--side) minmax(0,1fr); min-height:100dvh; }
+    .sidebar { position:sticky; top:0; height:100dvh; background:var(--nav); color:#fff; padding:26px 15px 18px; display:flex; flex-direction:column; gap:42px; }
+    .brand { display:flex; align-items:center; gap:11px; padding-left:10px; font-size:23px; font-weight:750; letter-spacing:-.055em; }
+    .brand-mark { width:34px; height:34px; display:grid; place-content:center; gap:3px; border-radius:10px; background:#6378ff; box-shadow:0 3px 12px #060e2b70; }
+    .brand-mark i { width:15px; height:3px; border-radius:3px; display:block; background:white; transform:skewX(-28deg); }
+    .brand-mark i:nth-child(2) { transform:translateX(2px) skewX(-28deg); }
+    .brand-mark i:nth-child(3) { transform:translateX(-2px) skewX(-28deg); }
+    .nav { display:grid; gap:5px; }
+    .nav button { min-height:43px; display:flex; align-items:center; gap:10px; padding:9px 10px; border:0; border-radius:8px; background:transparent; text-align:left; color:#bfcbe1; font-size:.875rem; font-weight:600; }
+    .nav button:hover { background:#23314c; color:#fff; }
+    .nav button[aria-current="page"] { color:#fff; background:#2e3d63; }
+    .nav button[aria-current="page"]::before { content:''; position:absolute; left:15px; width:3px; height:22px; background:#8796ff; border-radius:0 3px 3px 0; }
+    .nav-count { margin-left:auto; font-size:.75rem; min-width:18px; min-height:18px; display:grid; place-items:center; border-radius:6px; background:#ffffff15; }
+    .workspace { margin-top:auto; display:flex; align-items:center; gap:9px; padding:14px 6px 0; border-top:1px solid #34425d; }
+    .workspace strong, .workspace small { display:block; }
+    .workspace strong { font-size:.8125rem; }
+    .workspace small { color:#b4c0d7; font-size:.75rem; }
+    .workspace-mark { border:1px solid #43516b; background:#1b2944; color:#d6dff7; width:31px; height:31px; border-radius:9px; display:grid; place-items:center; }
+    .icon { display:inline-block; position:relative; flex:none; width:17px; height:17px; color:inherit; }
+    .icon::before, .icon::after { position:absolute; content:''; box-sizing:border-box; }
+    .i-board::before { inset:2px 0; border:1.5px solid; border-radius:3px; }
+    .i-board::after { inset:3px 5px; border-left:1.5px solid; border-right:1.5px solid; }
+    .i-list::before { inset:2px 1px; border:1.5px solid; border-radius:3px; }
+    .i-list::after { width:8px; height:1.5px; top:6px; left:4.5px; background:currentColor; box-shadow:0 3.5px currentColor; }
+    .i-return::before { width:12px; height:9px; border:1.5px solid; border-left:0; border-radius:0 8px 8px 0; top:5px; left:3px; }
+    .i-return::after { top:3px; left:2px; width:5.5px; height:5.5px; border-top:1.5px solid; border-left:1.5px solid; transform:rotate(-45deg); }
+    .i-cross::before { inset:1px; border:1.5px solid; border-radius:50%; }
+    .i-cross::after { inset:8px 4px auto; height:1.5px; background:currentColor; transform:rotate(-45deg); }
+    .i-search::before { width:10px; height:10px; left:1px; top:1px; border:1.6px solid; border-radius:50%; }
+    .i-search::after { width:6px; height:1.6px; left:9px; top:12px; background:currentColor; transform:rotate(45deg); }
+    .i-clock::before { inset:1px; border:1.5px solid; border-radius:50%; }
+    .i-clock::after { top:4px; left:8px; width:4.5px; height:5.5px; border-left:1.5px solid; border-bottom:1.5px solid; }
+    .i-wallet::before { inset:2px 1px; border:1.5px solid; border-radius:4px; }
+    .i-wallet::after { inset:6px 1px 6px 8px; border:1.5px solid; border-radius:3px 0 0 3px; }
+    .i-check::before { inset:1px; border:1.5px solid; border-radius:50%; }
+    .i-check::after { top:5px; left:5px; width:7px; height:4.5px; border-left:1.5px solid; border-bottom:1.5px solid; transform:rotate(-45deg); }
+    .i-clip::before { top:1px; left:5px; width:7px; height:13px; border:1.4px solid; border-radius:6px; transform:rotate(32deg); }
+    .i-clip::after { top:3px; left:7px; width:3px; height:8px; border:1px solid; border-top:0; border-radius:0 0 3px 3px; transform:rotate(32deg); }
+    .i-plus::before { inset:8px 2px auto; height:1.6px; background:currentColor; }
+    .i-plus::after { inset:2px auto 2px 8px; width:1.6px; background:currentColor; }
+    .i-person::before { top:1px; left:5px; width:7px; height:7px; border:1.5px solid; border-radius:50%; }
+    .i-person::after { inset:9px 2px 1px; border:1.5px solid; border-radius:6px 6px 3px 3px; }
+    .topbar { min-height:64px; padding:0 28px; display:flex; align-items:center; justify-content:space-between; gap:10px; border-bottom:1px solid var(--faint); background:#fff; }
+    .crumb { color:var(--muted); font-size:.875rem; }
+    .crumb span { color:var(--ink); font-weight:650; }
+    .crumb b { font-weight:400; padding:0 7px; color:#8390a4; }
+    .top-right { display:flex; align-items:center; gap:13px; }
+    .demo { display:flex; align-items:center; gap:7px; padding:5px 9px; border-radius:100px; background:#edf0ff; color:#3e49a8; font-weight:650; font-size:.75rem; white-space:nowrap; }
+    .demo::before { width:6px; height:6px; background:#6476e7; border-radius:50%; content:''; }
+    .mobile-demo { display:none; }
+    .avatar { display:grid; place-items:center; flex:none; width:27px; height:27px; border-radius:50%; font-weight:700; font-size:.66rem; background:#e7edff; color:#3d53a0; }
+    .avatar[data-tone="1"] { color:#815537; background:#f7e9db; }
+    .avatar[data-tone="2"] { color:#276859; background:#e0f1eb; }
+    .avatar[data-tone="3"] { color:#6a4890; background:#efe6f8; }
+    .top-right .avatar { width:33px; height:33px; font-size:.76rem; }
+    .content { padding:29px 28px 36px; max-width:1740px; margin:auto; }
+    .page-head { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:23px; }
+    h1 { font-size:clamp(1.7rem,3vw,2.2rem); line-height:1.08; font-weight:760; letter-spacing:-.045em; }
+    .btn { display:inline-flex; justify-content:center; align-items:center; gap:7px; min-height:41px; border:1px solid #d9e0ed; background:#fff; border-radius:9px; padding:8px 13px; font-weight:650; font-size:.875rem; text-align:center; }
+    .btn:hover { background:#f2f5fc; }
+    .btn-primary { background:var(--accent); color:white; border-color:var(--accent); box-shadow:0 2px 4px #25369b20; }
+    .btn-primary:hover { background:var(--accent-dark); border-color:var(--accent-dark); }
+    .btn-danger { color:#a13047; }
+    .stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:28px; }
+    .stat { min-width:0; background:var(--paper); border:1px solid var(--faint); border-radius:var(--radius); display:flex; gap:12px; padding:14px; align-items:flex-start; }
+    .stat-icon { color:#465cc2; background:#e9edff; width:36px; height:36px; border-radius:10px; display:grid; place-items:center; flex:none; }
+    .stat:nth-child(2) .stat-icon { background:#f2eaff; color:#764eb1; }
+    .stat:nth-child(3) .stat-icon { background:#e1f3ea; color:#23755a; }
+    .stat dt { font-size:.875rem; color:var(--muted); font-weight:600; }
+    .stat dd { font-weight:760; font-variant-numeric:tabular-nums; letter-spacing:-.035em; line-height:1.18; font-size:clamp(1.05rem,2vw,1.55rem); margin:2px 0 4px; overflow-wrap:anywhere; }
+    .stat small { color:var(--muted); font-size:.75rem; }
+    .board-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:13px; }
+    h2 { font-size:1.2rem; letter-spacing:-.025em; font-weight:750; }
+    .board-title { display:flex; align-items:center; gap:9px; }
+    .total { white-space:nowrap; background:#e9edf5; color:#4e5d75; padding:2px 7px; font-weight:700; font-size:.75rem; border-radius:6px; }
+    .filters { display:flex; align-items:center; gap:8px; min-width:0; }
+    .search, .select { position:relative; display:block; min-width:0; }
+    .search .icon { position:absolute; left:11px; top:11px; color:#64738d; pointer-events:none; }
+    input, select, textarea { max-width:100%; border:1px solid #dce3ef; border-radius:8px; background:#fff; min-height:40px; padding:8px 10px; }
+    input::placeholder, textarea::placeholder { color:#687690; }
+    .search input { width:220px; padding:8px 9px 8px 34px; font-size:.875rem; }
+    .select select { font-size:.875rem; appearance:none; width:100%; padding-right:29px; }
+    .select::after { position:absolute; content:''; width:7px; height:7px; right:12px; top:15px; border-right:1.5px solid #546681; border-bottom:1.5px solid #546681; transform:rotate(45deg); pointer-events:none; }
+    .mobile-stages { display:none; }
+    .board { display:grid; grid-template-columns:repeat(5,minmax(160px,1fr)); gap:10px; overflow-x:auto; padding:0 1px 9px; scrollbar-color:#bdc9dd transparent; scrollbar-width:thin; }
+    .stage { --stage:#4a60c7; --soft:#e8edff; background:#edf0f6; border:1px solid #e4e9f2; border-radius:11px; min-width:0; overflow:hidden; }
+    [data-stage="finance"] { --stage:#345f9e; --soft:#dfeaf9; }
+    [data-stage="director"] { --stage:#6e47a0; --soft:#eee4fa; }
+    [data-stage="ready"] { --stage:#965729; --soft:#faeedb; }
+    [data-stage="paid"] { --stage:#287259; --soft:#e0f1e8; }
+    [data-stage="rework"] { --stage:#965729; --soft:#faeedb; }
+    [data-stage="rejected"] { --stage:#a4384c; --soft:#fae6eb; }
+    .stage-head { border-top:3px solid var(--stage); padding:10px 10px 9px; background:#f9faff; border-bottom:1px solid #e0e6f0; }
+    .stage-head h3 { font-size:.875rem; display:flex; align-items:center; justify-content:space-between; gap:4px; font-weight:720; }
+    .stage-count { border-radius:6px; background:var(--soft); color:var(--stage); font-size:.75rem; min-width:21px; text-align:center; padding:1px 3px; }
+    .stage-head p { font-size:.8125rem; color:var(--muted); margin-top:3px; font-variant-numeric:tabular-nums; }
+    .cards { min-height:360px; display:grid; align-content:start; gap:7px; padding:7px; }
+    .card { min-width:0; text-align:left; display:block; width:100%; background:white; border:1px solid #dfe5ef; border-radius:9px; padding:10px; box-shadow:0 1px 2px #152c4e09; transition:box-shadow .15s,border-color .15s; }
+    .card:hover { border-color:#a6b5ea; box-shadow:0 3px 10px #2a3f6d12; }
+    .card-top, .card-bottom { display:flex; align-items:center; justify-content:space-between; gap:5px; }
+    .card-id, .card-date { font-size:.75rem; color:var(--muted); white-space:nowrap; }
+    .card-title { display:block; font-size:.875rem; font-weight:740; letter-spacing:-.012em; line-height:1.3; margin-top:8px; overflow-wrap:anywhere; }
+    .card-party { display:block; font-size:.8125rem; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .card-amount { display:block; font-size:1.06rem; font-weight:760; letter-spacing:-.03em; font-variant-numeric:tabular-nums; margin:7px 0 8px; overflow-wrap:anywhere; }
+    .card-bottom { border-top:1px solid #edf0f6; padding-top:8px; }
+    .card-meta { min-width:0; display:flex; align-items:center; gap:5px; }
+    .card-attachments { display:flex; align-items:center; color:#657289; gap:2px; font-size:.75rem; }
+    .tag, .status { display:inline-block; border-radius:5px; font-size:.72rem; font-weight:680; padding:3px 6px; overflow-wrap:anywhere; }
+    .tag { color:#4652a5; background:#eef0ff; }
+    .tag.expense { background:#e7f3ef; color:#246b57; }
+    .status { color:var(--stage); background:var(--soft); --stage:#4a60c7; --soft:#e8edff; }
+    .empty { padding:17px 10px; text-align:center; color:var(--muted); font-size:.875rem; }
+    .list { display:grid; gap:7px; }
+    .list-item { padding:12px 14px; display:grid; grid-template-columns:minmax(135px,1.7fr) minmax(110px,1fr) minmax(115px,.7fr) minmax(105px,.7fr); gap:10px; align-items:center; }
+    .list-item .card-title { margin:0; }
+    .list-item .card-amount { margin:0; }
+    .list-item .status { justify-self:start; }
+    .list > .empty { background:#fff; border:1px solid var(--faint); border-radius:10px; }
+    .employee-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .employee-card { padding:13px; }
+    .employee-card .card-title { margin-top:0; font-size:1rem; }
+    .employee-card .card-party { white-space:normal; overflow-wrap:anywhere; }
+    .employee-card .tag { flex:none; }
+    .employee-rules { border-top:1px solid var(--faint); margin-top:10px; padding-top:8px; display:grid; grid-template-columns:1fr 1fr; gap:5px 10px; }
+    .employee-rule-label { display:block; color:var(--muted); font-size:.8125rem; }
+    .employee-rule-value { display:block; font-size:.875rem; font-weight:650; overflow-wrap:anywhere; }
+    .employee-card .limit { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline; }
+    .employee-card .inactive { background:#fae6eb; color:#9a354a; }
+    .route { background:#f2f5fe; border:1px solid #e0e6f5; padding:9px 11px; border-radius:8px; font-size:.875rem; overflow-wrap:anywhere; }
+    .route ol { padding-left:23px; margin:5px 0 0; }
+    .route li + li { margin-top:3px; }
+    dialog { border:0; padding:0; color:var(--ink); background:white; }
+    dialog::backdrop { background:#10203b85; }
+    body:has(dialog[open]) { overflow:hidden; }
+    .drawer { margin:0 0 0 auto; inset:0 0 0 auto; max-height:none; height:100dvh; width:min(100%,490px); max-width:100%; box-shadow:-12px 0 36px #111c3b30; overflow:auto; overscroll-behavior:contain; }
+    .drawer-head { position:sticky; top:0; z-index:1; background:#fff; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:13px 21px; border-bottom:1px solid var(--faint); }
+    .close { background:#f0f3fa; border:0; width:40px; height:40px; border-radius:9px; color:#53617b; font-size:1.4rem; line-height:1; flex:none; }
+    .close:hover { background:#e7edfa; }
+    .drawer-body { padding:19px 21px 27px; }
+    .detail-heading { font-size:1.55rem; letter-spacing:-.035em; line-height:1.15; margin:8px 0 6px; overflow-wrap:anywhere; }
+    .detail-amount { font-size:1.85rem; font-weight:760; letter-spacing:-.04em; margin:6px 0 13px; overflow-wrap:anywhere; }
+    .details { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:16px 0; }
+    .details dt { color:var(--muted); font-size:.8125rem; }
+    .details dd { margin-top:3px; font-weight:650; overflow-wrap:anywhere; }
+    .drawer-section { border-top:1px solid var(--faint); margin-top:16px; padding-top:14px; }
+    .drawer-section h3 { font-size:1rem; margin-bottom:8px; }
+    .drawer-section p { white-space:pre-wrap; overflow-wrap:anywhere; }
+    .actions { margin-top:16px; display:flex; flex-wrap:wrap; gap:7px; }
+    .attachment { display:flex; gap:6px; align-items:center; margin-top:6px; color:#344cba; font-size:.875rem; overflow-wrap:anywhere; }
+    .history { list-style:none; padding:0; margin:0; }
+    .history li { margin-left:5px; border-left:1px solid #dce3f2; padding:0 0 14px 13px; position:relative; overflow-wrap:anywhere; }
+    .history li::before { position:absolute; left:-4px; top:6px; border-radius:50%; width:7px; height:7px; content:''; background:#6678d1; }
+    .history li:last-child { padding-bottom:0; border-color:transparent; }
+    .history strong { font-size:.875rem; }
+    .history time { display:block; color:var(--muted); font-size:.75rem; }
+    .history p, .helper { color:var(--muted); font-size:.875rem; }
+    .form-grid { display:grid; gap:12px; }
+    .form-grid label { display:grid; gap:4px; font-size:.875rem; font-weight:650; min-width:0; }
+    .form-grid input, .form-grid select, .form-grid textarea { width:100%; font-size:1rem; font-weight:400; }
+    .form-grid .select { width:100%; }
+    .form-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    textarea { resize:vertical; min-height:82px; }
+    .error { color:#a13047; font-size:.875rem; font-weight:650; margin-top:5px; }
+    .notice { position:fixed; z-index:5; bottom:15px; right:15px; width:max-content; max-width:calc(100vw - 30px); border-radius:9px; padding:10px 14px; background:#162645; color:white; box-shadow:0 4px 14px #14264838; font-size:.875rem; }
+    .storage-warning { border:1px solid #eed5ac; background:#fff1d6; color:#79532c; margin-bottom:14px; padding:9px 12px; border-radius:8px; font-size:.875rem; }
+    @media (max-width:1100px) and (min-width:761px) {
+      :root { --side:166px; }
+      .sidebar { padding-left:10px; padding-right:10px; }
+      .nav button { gap:7px; }
+      .nav button[aria-current="page"]::before { left:10px; }
+      .topbar, .content { padding-inline:18px; }
+    }
+    @media (max-width:760px) {
+      .shell { display:flex; flex-direction:column; }
+      .sidebar { position:static; height:auto; padding:calc(10px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 7px max(12px, env(safe-area-inset-left)); gap:7px; }
+      .brand { padding-left:2px; font-size:1.25rem; }
+      .brand-mark { width:27px; height:27px; border-radius:7px; }
+      .mobile-demo { display:flex; margin-left:auto; letter-spacing:normal; }
+      .nav { display:flex; flex-wrap:wrap; gap:4px; }
+      .nav button { flex:none; white-space:nowrap; min-height:44px; padding:6px 8px; }
+      .nav button[aria-current="page"]::before, .nav .icon, .workspace { display:none; }
+      .nav-count { min-width:16px; min-height:16px; }
+      .topbar { display:none; }
+      .content { padding:17px max(12px, env(safe-area-inset-right)) calc(25px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+      .page-head { align-items:flex-start; margin-bottom:14px; }
+      .page-head h1 { font-size:1.65rem; max-width:220px; }
+      .new-btn { padding-inline:8px; max-width:116px; flex:none; }
+      .new-btn .icon { width:15px; }
+      .stats { gap:6px; margin-bottom:18px; }
+      .stat { padding:8px 6px; gap:0; }
+      .stat-icon { display:none; }
+      .stat dt { font-size:.75rem; }
+      .stat dd { font-size:1.025rem; }
+      .stat small { font-size:.72rem; }
+      .board-head { align-items:stretch; flex-direction:column; gap:9px; margin-bottom:9px; }
+      .filters { display:grid; grid-template-columns:minmax(0,1fr); gap:6px; }
+      .search input { width:100%; }
+      .search .icon { top:14px; }
+      .select::after { top:17px; }
+      .mobile-stages { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:9px; margin-bottom:9px; font-size:.875rem; font-weight:650; }
+      .mobile-stages select { color:#384cae; background:#e9edff; border-color:#bac5fa; }
+      .btn, .close, .search input, .select select, .form-grid input { min-height:44px; }
+      .search input, .select select { font-size:1rem; }
+      .board { display:block; overflow:visible; padding:0; }
+      .stage:not(.is-mobile-active) { display:none; }
+      .cards { min-height:90px; }
+      .card { padding:10px 11px; }
+      .card-title { font-size:.95rem; }
+      .list-item { display:grid; grid-template-columns:minmax(0,1fr) auto; }
+      .list-item .card-amount { grid-column:1; grid-row:2; }
+      .list-item .status { grid-column:2; grid-row:2; }
+      .list-item .tag { justify-self:end; }
+      .employee-list { grid-template-columns:1fr; }
+      .drawer { width:100%; scroll-padding-top:calc(72px + env(safe-area-inset-top)); }
+      .drawer-head { padding:calc(10px + env(safe-area-inset-top)) max(13px, env(safe-area-inset-right)) 10px max(13px, env(safe-area-inset-left)); }
+      .drawer-body { padding:14px max(13px, env(safe-area-inset-right)) calc(22px + env(safe-area-inset-bottom)) max(13px, env(safe-area-inset-left)); }
+      .close { width:44px; }
+      .attachment { min-height:44px; margin-top:0; }
+    }
+    @media (max-width:520px) {
+      .form-row { grid-template-columns:minmax(0,1fr); }
+      .actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .actions .btn-primary, .actions .btn:only-child, .actions .btn:last-child:nth-child(2) { grid-column:1 / -1; }
+    }
+    @media (max-width:370px) {
+      .nav button { padding-inline:6px; font-size:.8rem; gap:4px; }
+      .page-head { display:grid; gap:8px; }
+      .page-head h1 { font-size:1.48rem; max-width:none; }
+      .new-btn { justify-self:start; max-width:none; }
+      .stat dd { font-size:.89rem; }
+    }
+    @media (prefers-reduced-motion:reduce) { *, *::before, *::after { transition:none !important; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>Поток<span class="demo mobile-demo">Демо-режим</span></div>
+      <nav class="nav" aria-label="Разделы заявок">
+        <button type="button" data-view="board" aria-current="page"><span class="icon i-board" aria-hidden="true"></span>Воронка</button>
+        <button type="button" data-view="list"><span class="icon i-list" aria-hidden="true"></span>Все заявки</button>
+        <button type="button" data-view="rework"><span class="icon i-return" aria-hidden="true"></span>Доработка<span class="nav-count" id="rework-count"></span></button>
+        <button type="button" data-view="rejected"><span class="icon i-cross" aria-hidden="true"></span>Отклонённые</button>
+        <button type="button" data-view="employees"><span class="icon i-person" aria-hidden="true"></span>Сотрудники</button>
+      </nav>
+      <div class="workspace"><span class="workspace-mark" aria-hidden="true">П</span><div><strong>Рабочее пространство</strong><small>Хранение в браузере</small></div></div>
+    </aside>
+    <main>
+      <header class="topbar">
+        <div class="crumb">Операции<b aria-hidden="true">/</b><span>Платежи</span></div>
+        <div class="top-right"><span class="demo">Демо-режим</span><span class="avatar" title="Демонстрационный пользователь" aria-label="Демонстрационный пользователь">ДП</span></div>
+      </header>
+      <div class="content">
+        <div class="page-head"><h1 id="page-title">Согласование платежей</h1><button type="button" class="btn btn-primary new-btn" id="new"><span class="icon i-plus" aria-hidden="true"></span><span id="new-label">Новая заявка</span></button></div>
+        <noscript><p class="storage-warning">Откройте файл в браузере с JavaScript, чтобы работать с заявками.</p></noscript>
+        <p id="storage-warning" class="storage-warning" role="status" hidden></p>
+        <dl class="stats" id="stats" aria-label="Сводка по платежам"></dl>
+        <section aria-labelledby="view-title">
+          <div class="board-head">
+            <div class="board-title"><h2 id="view-title">Воронка заявок</h2><span class="total" id="total" aria-live="polite"></span></div>
+            <div class="filters">
+              <label class="search"><span class="sr" id="query-label">Поиск заявок</span><span class="icon i-search" aria-hidden="true"></span><input id="query" type="search" placeholder="Поиск заявок"></label>
+              <label class="select" id="type-filter"><span class="sr">Вид заявки</span><select id="type"><option value="all">Все виды</option><option value="invoice">Счета</option><option value="expense">Авансы и возмещения</option></select></label>
+            </div>
+          </div>
+          <label class="mobile-stages" id="mobile-stages"><span>Этап</span><span class="select"><select id="stage-picker"></select></span></label>
+          <div id="results"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+  <dialog class="drawer" id="drawer" aria-labelledby="drawer-title">
+    <div class="drawer-head"><h2 id="drawer-title"></h2><button class="close" type="button" aria-label="Закрыть" id="close">×</button></div>
+    <div class="drawer-body" id="drawer-body"></div>
+  </dialog>
+  <div class="notice" role="status" id="notice" hidden></div>
+  <script>
+    'use strict';
+
+    const stageNames = {
+      manager: 'Руководитель', finance: 'Финансы', director: 'Собственник / директор',
+      ready: 'К оплате', paid: 'Оплачено', rework: 'На доработке', rejected: 'Отклонена'
+    };
+    const boardStages = ['manager', 'finance', 'director', 'ready', 'paid'];
+    const nextStage = {manager: 'finance', finance: 'director', director: 'ready'};
+    const roles = {manager: 'Руководитель инициатора', finance: 'Финансовая служба', director: 'Генеральный директор'};
+    const viewTitles = {board: 'Воронка заявок', list: 'Все заявки', rework: 'На доработке', rejected: 'Отклонённые заявки', employees: 'Справочник'};
+    const employeeRoles = {staff:'Сотрудник', manager:'Руководитель', finance:'Финансист', owner:'Собственник'};
+    const approvalStages = {manager:'manager', finance:'finance', owner:'director'};
+    const storageKey = 'potok-payments-demo-v1';
+    const employeeStorageKey = 'potok-employees-demo-v1';
+    const storageUnavailable = 'Временный режим. Браузер ограничил сохранение. Изменения доступны до закрытия или обновления вкладки.';
+    const moneyFormat = new Intl.NumberFormat('ru-RU', {style:'currency', currency:'RUB', maximumFractionDigits:2, minimumFractionDigits:0});
+    const shortDate = new Intl.DateTimeFormat('ru-RU', {day:'numeric', month:'short'});
+    const historyDate = new Intl.DateTimeFormat('ru-RU', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+    const wordRequest = new Intl.PluralRules('ru-RU');
+    const byId = id => document.getElementById(id);
+    const drawer = byId('drawer');
+    const drawerBody = byId('drawer-body');
+    const compactLayout = window.matchMedia('(max-width: 760px)');
+    const money = cents => moneyFormat.format(cents / 100);
+    const amountOf = items => items.reduce((sum, item) => sum + item.cents, 0);
+    const e = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'})[character]);
+    const requestCount = count => `${count} ${{one:'заявка', few:'заявки', many:'заявок', other:'заявки'}[wordRequest.select(count)]}`;
+
+    function seedEmployees() {
+      return [
+        [1,'Анна Белова','Закупки','Специалист по закупкам','staff',6,7,50000],
+        [2,'Илья Серов','Администрация','Координатор офиса','staff',6,8,25000],
+        [3,'Лев Артамонов','Логистика','Менеджер по логистике','staff',6,7,100000],
+        [4,'Ольга Вересова','Коммерческий отдел','Менеджер проектов','staff',6,7,40000],
+        [5,'Нина Полева','Маркетинг','Специалист по маркетингу','staff',6,8,75000],
+        [6,'Павел Крылов','Операционный отдел','Руководитель операций','manager',7,8,150000],
+        [7,'Мария Зорина','Финансы','Финансовый менеджер','finance',8,6,250000],
+        [8,'Елена Морозова','Руководство','Собственник','owner',7,6,300000]
+      ].map(([id,name,department,position,role,first,second,limit]) => ({id,name,department,position,role,first,second,limit:limit*100,active:true}));
+    }
+
+    function seed() {
+      const examples = [
+        [124,'manager','invoice','Бумага и расходные материалы','ООО «Лист и линия»',24800,'Анна Белова',18],
+        [123,'manager','expense','Возмещение за такси','Илья Серов',4650,'Илья Серов',18],
+        [122,'manager','invoice','Аренда склада за ноябрь','ООО «Пятый склад»',186000,'Лев Артамонов',17],
+        [121,'finance','invoice','Поддержка ИТ-систем','ООО «Ровный код»',68500,'Роман Белов',17],
+        [120,'finance','expense','Аванс на командировку','Ольга Вересова',32000,'Ольга Вересова',16],
+        [119,'director','invoice','Мебель для переговорной','ООО «Полка и стол»',148000,'Анна Белова',16],
+        [118,'director','invoice','Доставка оборудования','ООО «Северная миля»',48700,'Лев Артамонов',15],
+        [117,'ready','invoice','Печать каталогов','ООО «Синий тираж»',96500,'Нина Полева',15],
+        [116,'ready','expense','Расходы на выставке','Артём Савин',18750,'Артём Савин',14],
+        [115,'paid','invoice','Хостинг на квартал','ООО «Точка связи»',42700,'Роман Белов',13],
+        [114,'paid','invoice','Обслуживание офиса','ООО «Бюро порядка»',125000,'Нина Полева',12],
+        [113,'rework','expense','Возмещение за билеты','Ольга Вересова',12900,'Ольга Вересова',13],
+        [112,'rejected','invoice','Дополнительный комплект мониторов','ООО «Ровный код»',56000,'Роман Белов',12]
+      ];
+      return examples.map(([id,stage,type,title,party,rubles,author,day]) => {
+        const at = hour => new Date(Date.UTC(2026, 10, day, hour)).toISOString();
+        const history = [{label:'Заявка создана', actor:author, at:at(7)}];
+        const approved = {manager:0,finance:1,director:2,ready:3,paid:3,rework:1,rejected:0}[stage];
+        for (const step of boardStages.slice(0, approved)) {
+          history.push({label:'Согласовано', actor:roles[step], at:at(7 + history.length)});
+        }
+        if (stage === 'ready' || stage === 'paid') history.push({label:'Передано в 1С (демо)', actor:'Демо-обмен', at:at(11)});
+        if (stage === 'paid') history.push({label:'Получен статус «Оплачено» (демо)', actor:'Демо-обмен', at:at(12)});
+        if (stage === 'rework') history.push({label:'Возвращено на доработку', actor:roles.finance, at:at(10), note:'Приложите подтверждение оплаты билетов.'});
+        if (stage === 'rejected') history.push({label:'Отклонено', actor:roles.manager, at:at(9), note:'Количество мониторов нужно подтвердить в следующей заявке.'});
+        const documentText = `Учебный документ для заявки ${id}. Использованы демонстрационные данные.`;
+        const bytes = new TextEncoder().encode(documentText);
+        return {id,stage,type,title,party,cents:rubles*100,author,created:at(7),history,
+          note:type === 'invoice' ? 'Оплата по счёту поставщика.' : 'Расходы по рабочей задаче.',
+          files: [{name:`Демо-документ-${id}.txt`, data:btoa(String.fromCharCode(...bytes))}]
+        };
+      });
+    }
+
+    function showStorageWarning(message) {
+      const banner = byId('storage-warning');
+      banner.textContent = message;
+      banner.hidden = false;
+    }
+
+    let browserStorage;
+    try { browserStorage = window.localStorage; } catch {}
+    if (!browserStorage) useTemporaryStorage();
+
+    function useTemporaryStorage() {
+      browserStorage = null;
+      showStorageWarning(storageUnavailable);
+    }
+
+    function load(key, examples) {
+      if (!browserStorage) return examples();
+      let stored;
+      try {
+        stored = browserStorage.getItem(key);
+      } catch {
+        useTemporaryStorage();
+        return examples();
+      }
+      if (!stored) return examples();
+      try {
+        const collection = JSON.parse(stored);
+        if (Array.isArray(collection)) return collection;
+      } catch {}
+      showStorageWarning('Не удалось прочитать данные браузера. Показаны исходные демонстрационные данные.');
+      return examples();
+    }
+
+    let items = load(storageKey, seed);
+    let employees = load(employeeStorageKey, seedEmployees);
+    let view = 'board';
+    let mobileStage = 'manager';
+    let noticeTimer;
+    let drawerTrigger;
+
+    function notify(message) {
+      const notice = byId('notice');
+      notice.textContent = message;
+      notice.hidden = false;
+      clearTimeout(noticeTimer);
+      noticeTimer = setTimeout(() => { notice.hidden = true; }, 3000);
+    }
+
+    function saveCollection(key, updated) {
+      if (!browserStorage) return true;
+      try {
+        browserStorage.setItem(key, JSON.stringify(updated));
+      } catch (error) {
+        if (error.name === 'SecurityError') {
+          useTemporaryStorage();
+          return true;
+        }
+        showError('Не удалось сохранить данные в браузере. Проверьте, доступно ли локальное хранилище и достаточно ли в нём места.');
+        return false;
+      }
+      return true;
+    }
+
+    function commit(item) {
+      const updated = [item, ...items.filter(old => old.id !== item.id)];
+      if (!saveCollection(storageKey, updated)) return false;
+      items = updated;
+      return true;
+    }
+
+    const employeeById = id => employees.find(employee => employee.id === Number(id));
+    const canApprove = employee => employee?.active && Boolean(approvalStages[employee.role]);
+
+    function amountInCents(value) {
+      const amount = value.trim().replace(/\s/g, '').replace(',', '.');
+      if (!/^\d{1,10}(\.\d{1,2})?$/.test(amount)) return null;
+      return Math.round(Number(amount) * 100);
+    }
+
+    function buildRoute(initiator, cents) {
+      if (!initiator) return {error:'Выберите активного сотрудника из справочника.'};
+      if (!initiator.active) return {error:'Инициатор отключён. Включите его в справочнике, чтобы отправить заявку.'};
+      const aboveLimit = cents > initiator.limit;
+      const first = employeeById(initiator.first);
+      const second = employeeById(initiator.second);
+      if (!canApprove(first) || first.id === initiator.id) return {error:'Первый согласующий недоступен. Обновите маршрут сотрудника в справочнике.'};
+      if (aboveLimit && (!canApprove(second) || second.id === initiator.id || second.id === first.id)) {
+        return {error:'Для этой суммы нужен второй согласующий. Обновите маршрут сотрудника в справочнике.'};
+      }
+      const people = aboveLimit ? [first, second] : [first];
+      const route = people.map(({id,name,role}) => ({id,name,role}));
+      return {route, aboveLimit};
+    }
+
+    function routeMarkup(route, currentIndex = -1) {
+      return `<ol>${route.map(({name,role}, index) => `<li>${e(name)} · ${employeeRoles[role]}${index === currentIndex ? ' · текущий этап' : ''}</li>`).join('')}</ol>`;
+    }
+
+    function approvalActor(item) {
+      const step = item.route?.[item.routeIndex];
+      return step ? `${step.name} · ${employeeRoles[step.role]}` : roles[item.stage];
+    }
+
+    function renderStats() {
+      const groups = [
+        ['На согласовании','clock', items.filter(item => nextStage[item.stage])],
+        ['К оплате','wallet', items.filter(item => item.stage === 'ready')],
+        ['Оплачено','check', items.filter(item => item.stage === 'paid')]
+      ];
+      byId('stats').innerHTML = groups.map(([name, icon, entries]) => `
+        <div class="stat"><span class="stat-icon" aria-hidden="true"><span class="icon i-${icon}"></span></span>
+          <div><dt>${name}</dt><dd>${money(amountOf(entries))}</dd><small>${requestCount(entries.length)}</small></div>
+        </div>`).join('');
+      byId('rework-count').textContent = items.filter(item => item.stage === 'rework').length;
+    }
+
+    function typeTag(item) {
+      return item.type === 'invoice' ? '<span class="tag">Счёт</span>' : '<span class="tag expense">Расходы</span>';
+    }
+
+    function card(item, inList = false) {
+      const title = `<span class="card-title">${e(item.title)}</span><span class="card-party">${e(item.party)}</span>`;
+      if (inList) return `<button class="card list-item" type="button" data-item="${item.id}"><span>${title}</span>${typeTag(item)}<span class="card-amount">${money(item.cents)}</span><span class="status" data-stage="${item.stage}">${stageNames[item.stage]}</span></button>`;
+      const initials = item.author.split(/\s+/).slice(0,2).map(word => word[0]).join('').toUpperCase();
+      return `<button class="card" type="button" data-item="${item.id}">
+        <span class="card-top"><span class="card-id">ПЛ-${item.id}</span>${typeTag(item)}</span>
+        ${title}<span class="card-amount">${money(item.cents)}</span>
+        <span class="card-bottom"><span class="card-meta"><span class="avatar" data-tone="${item.author.charCodeAt(0) % 4}" title="${e(item.author)}" aria-label="${e(item.author)}">${e(initials)}</span><span class="card-date">${shortDate.format(new Date(item.created))}</span></span>
+        ${item.files.length ? `<span class="card-attachments" aria-label="Вложений: ${item.files.length}"><span class="icon i-clip" aria-hidden="true"></span>${item.files.length}</span>` : ''}</span>
+      </button>`;
+    }
+
+    function employeeCard(employee) {
+      const approver = id => {
+        const person = employeeById(id);
+        return person ? `${e(person.name)}${canApprove(person) ? '' : ' · недоступен'}` : 'Требуется назначить';
+      };
+      return `<button class="card employee-card" type="button" data-employee="${employee.id}">
+        <span class="card-top"><span class="card-title">${e(employee.name)}</span><span class="tag ${employee.active ? '' : 'inactive'}">${employee.active ? employeeRoles[employee.role] : 'Отключён'}</span></span>
+        <span class="card-party">${e(employee.department)} · ${e(employee.position)}${employee.active ? '' : ` · ${employeeRoles[employee.role]}`}</span>
+        <span class="employee-rules"><span><span class="employee-rule-label">Первый согласующий</span><span class="employee-rule-value">${approver(employee.first)}</span></span><span><span class="employee-rule-label">Второй согласующий</span><span class="employee-rule-value">${approver(employee.second)}</span></span><span class="limit"><span class="employee-rule-label">Порог для второго</span><span class="employee-rule-value">${money(employee.limit)}</span></span></span>
+      </button>`;
+    }
+
+    function render({revealMatches = false} = {}) {
+      renderStats();
+      document.querySelectorAll('[data-view]').forEach(button => {
+        if (button.dataset.view === view) button.setAttribute('aria-current', 'page');
+        else button.removeAttribute('aria-current');
+      });
+      byId('view-title').textContent = viewTitles[view];
+      const isDirectory = view === 'employees';
+      byId('page-title').textContent = isDirectory ? 'Сотрудники' : 'Согласование платежей';
+      byId('new-label').textContent = isDirectory ? 'Добавить сотрудника' : 'Новая заявка';
+      byId('stats').hidden = isDirectory;
+      byId('type-filter').hidden = isDirectory;
+      const searchLabel = isDirectory ? 'Поиск сотрудников' : 'Поиск заявок';
+      byId('query-label').textContent = searchLabel;
+      byId('query').placeholder = searchLabel;
+      const query = byId('query').value.trim().toLocaleLowerCase('ru');
+      const type = byId('type').value;
+      byId('mobile-stages').hidden = view !== 'board';
+      if (isDirectory) {
+        const visible = employees.filter(employee => `${employee.name} ${employee.department} ${employee.position} ${employeeRoles[employee.role]}`.toLocaleLowerCase('ru').includes(query));
+        byId('total').textContent = `${visible.length} / ${employees.length}`;
+        byId('results').innerHTML = `<div class="employee-list">${visible.map(employeeCard).join('') || '<p class="empty">Сотрудники не найдены</p>'}</div>`;
+        return;
+      }
+      const filtered = items.filter(item => {
+        const matchView = view === 'list' || (view === 'board' ? boardStages.includes(item.stage) : item.stage === view);
+        const haystack = `${item.title} ${item.party} ${item.author} ПЛ-${item.id}`.toLocaleLowerCase('ru');
+        return matchView && (type === 'all' || item.type === type) && haystack.includes(query);
+      });
+      byId('total').textContent = requestCount(filtered.length);
+      if (view !== 'board') {
+        byId('results').innerHTML = `<div class="list">${filtered.map(item => card(item,true)).join('') || '<p class="empty">Заявок не найдено</p>'}</div>`;
+        return;
+      }
+      const columns = boardStages.map(stage => ({stage, visible:filtered.filter(item => item.stage === stage)}));
+      if (revealMatches && !columns.find(column => column.stage === mobileStage).visible.length) {
+        mobileStage = columns.find(column => column.visible.length)?.stage ?? mobileStage;
+      }
+      const stagePicker = byId('stage-picker');
+      stagePicker.innerHTML = columns.map(({stage, visible}) => `<option value="${stage}">${stageNames[stage]} · ${visible.length}</option>`).join('');
+      stagePicker.value = mobileStage;
+      byId('results').innerHTML = `<div class="board">${columns.map(({stage, visible}) => `
+        <section class="stage ${stage === mobileStage ? 'is-mobile-active' : ''}" data-stage="${stage}" aria-label="${stageNames[stage]}">
+          <header class="stage-head"><h3>${stageNames[stage]}<span class="stage-count">${visible.length}</span></h3><p>${money(amountOf(visible))}</p></header>
+          <div class="cards">${visible.map(item => card(item)).join('') || '<p class="empty">Заявок нет</p>'}</div>
+        </section>`).join('')}</div>`;
+    }
+
+    function openDrawer(title, content, focusSelector = '#close') {
+      const alreadyOpen = drawer.open;
+      if (!alreadyOpen) drawerTrigger = document.activeElement;
+      byId('drawer-title').textContent = title;
+      drawerBody.innerHTML = `${browserStorage ? '' : `<p class="storage-warning">${storageUnavailable}</p>`}${content}`;
+      drawerBody.dataset.item = '';
+      drawerBody.dataset.employee = '';
+      if (!alreadyOpen) drawer.showModal();
+      drawer.scrollTop = 0;
+      drawer.querySelector(compactLayout.matches ? '#close' : focusSelector)?.focus({preventScroll:true});
+    }
+
+    function fileLinks(item) {
+      if (!item.files.length) return '';
+      return `<section class="drawer-section"><h3>Вложения</h3>${item.files.map((file, index) => `<a class="attachment" href="#" data-file="${index}"><span class="icon i-clip" aria-hidden="true"></span>${e(file.name)}</a>`).join('')}</section>`;
+    }
+
+    function showDetails(item) {
+      let operations = '';
+      if (nextStage[item.stage]) operations = `<button class="btn btn-primary" type="button" data-act="approve">Согласовать</button><button class="btn" type="button" data-act="rework">Вернуть на доработку</button><button class="btn btn-danger" type="button" data-act="rejected">Отклонить</button>`;
+      if (item.stage === 'rework') operations = '<button type="button" class="btn btn-primary" data-act="edit">Исправить заявку</button>';
+      if (item.stage === 'ready') operations = '<button type="button" class="btn btn-primary" data-act="pay">Смоделировать оплату</button>';
+      const transferred = item.stage === 'ready' || item.stage === 'paid';
+      const exchange = transferred ? `<section class="drawer-section"><h3>Демо-обмен с 1С</h3><dl class="details"><div><dt>Передача</dt><dd>Передано · 1С-${item.id}</dd></div><div><dt>Оплата</dt><dd>${item.stage === 'paid' ? 'Оплачено' : 'Ожидает оплаты'}</dd></div></dl></section>` : '';
+      const route = item.route ? `<section class="drawer-section"><h3>Маршрут согласования</h3><div class="route">${routeMarkup(item.route, nextStage[item.stage] ? item.routeIndex : -1)}</div></section>` : '';
+      openDrawer(`Заявка ПЛ-${item.id}`, `
+        <div>${typeTag(item)} <span class="status" data-stage="${item.stage}">${stageNames[item.stage]}</span></div>
+        <h3 class="detail-heading">${e(item.title)}</h3><div class="detail-amount">${money(item.cents)}</div>
+        <dl class="details"><div><dt>Получатель</dt><dd>${e(item.party)}</dd></div><div><dt>Инициатор</dt><dd>${e(item.author)}</dd></div>${roles[item.stage] ? `<div><dt>Сейчас согласует</dt><dd>${e(approvalActor(item))}</dd></div>` : ''}<div><dt>Создана</dt><dd>${shortDate.format(new Date(item.created))}</dd></div></dl>
+        ${operations ? `<div class="actions">${operations}</div><p id="form-error" class="error" role="alert" hidden></p>` : ''}
+        ${route}
+        ${item.note ? `<section class="drawer-section"><h3>Назначение платежа</h3><p>${e(item.note)}</p></section>` : ''}
+        ${fileLinks(item)}${exchange}
+        <section class="drawer-section"><h3>История решений</h3><ol class="history">${item.history.slice().reverse().map(event => `<li><strong>${e(event.label)} · ${e(event.actor)}</strong><time datetime="${e(event.at)}">${historyDate.format(new Date(event.at))}</time>${event.note ? `<p>${e(event.note)}</p>` : ''}</li>`).join('')}</ol></section>`);
+      drawerBody.dataset.item = item.id;
+    }
+
+    function showForm(item) {
+      const legacy = item && !item.initiatorId;
+      const initiator = legacy
+        ? `<label>Инициатор<input name="author" maxlength="70" required value="${e(item.author)}"></label>`
+        : `<label>Инициатор<span class="select"><select name="initiator" ${item ? 'disabled' : 'required'}>${personOptions(employees.filter(employee => employee.active), item?.initiatorId)}</select></span></label>`;
+      openDrawer(item ? 'Исправление заявки' : 'Новая заявка', `
+        <form id="request-form" class="form-grid">
+          <label>Вид заявки<span class="select"><select name="type"><option value="invoice">Счёт поставщика или подрядчика</option><option value="expense" ${item?.type === 'expense' ? 'selected' : ''}>Аванс или возмещение сотруднику</option></select></span></label>
+          <label>Название<input name="title" maxlength="100" required placeholder="Например, печать каталогов" value="${e(item?.title)}"></label>
+          <label>Получатель<input name="party" maxlength="100" required value="${e(item?.party)}"></label>
+          <div class="form-row"><label>Сумма, ₽<input name="amount" inputmode="decimal" maxlength="13" required placeholder="0,00" value="${item ? String(item.cents / 100).replace('.', ',') : ''}"></label>${initiator}</div>
+          ${legacy ? '' : '<div class="route" id="route-preview" aria-live="polite"></div>'}
+          <label>Назначение платежа<textarea name="note" maxlength="1000">${e(item?.note)}</textarea></label>
+          <label>Вложения<input name="files" type="file" multiple><span class="helper">До 1 МБ суммарно на заявку. ${item?.files.length ? `При выборе новых файлов прежние вложения заменяются. Сейчас вложений: ${item.files.length}.` : ''}</span></label>
+          <p id="form-error" class="error" role="alert" hidden></p>
+          <div class="actions"><button class="btn btn-primary" type="submit">${item ? 'Отправить повторно' : 'Отправить на согласование'}</button><button type="button" class="btn" data-act="cancel">Отмена</button></div>
+        </form>`, '[name="title"]');
+      drawerBody.dataset.item = item?.id ?? '';
+      if (!legacy) updateRoutePreview(byId('request-form'));
+    }
+
+    function personOptions(people, selected) {
+      const unavailable = selected && !people.some(person => person.id === selected) ? employeeById(selected) : null;
+      return `<option value="">Выберите сотрудника</option>${unavailable ? `<option value="${unavailable.id}" selected>${e(unavailable.name)} · недоступен</option>` : ''}${people.map(person => `<option value="${person.id}" ${person.id === selected ? 'selected' : ''}>${e(person.name)} · ${e(person.department)}</option>`).join('')}`;
+    }
+
+    function updateRoutePreview(form) {
+      const preview = byId('route-preview');
+      const initiator = employeeById(form.elements.initiator.value);
+      const cents = amountInCents(form.elements.amount.value);
+      if (!initiator || cents === null || cents <= 0) {
+        preview.textContent = 'Выберите инициатора и укажите сумму, чтобы увидеть маршрут.';
+        return;
+      }
+      const result = buildRoute(initiator, cents);
+      if (result.error) {
+        preview.textContent = result.error;
+        return;
+      }
+      preview.innerHTML = `<strong>Маршрут согласования</strong><p>Лимит ${money(initiator.limit)} · ${result.aboveLimit ? 'нужны два согласующих' : 'достаточно одного согласующего'}</p>${routeMarkup(result.route)}`;
+    }
+
+    function showEmployee(employee) {
+      const approvers = employees.filter(person => person.id !== employee?.id && canApprove(person));
+      const references = employee && employees.filter(person => person.active && (person.first === employee.id || person.second === employee.id)).length;
+      const status = employee ? `<p class="helper">Статус · ${employee.active ? 'Активен' : 'Отключён'}.${employee.active && references ? ` Сотрудник указан как согласующий в ${references} записях. После отключения замените его в этих маршрутах.` : ''}</p>` : '';
+      openDrawer(employee ? 'Карточка сотрудника' : 'Новый сотрудник', `
+        <form id="employee-form" class="form-grid">
+          ${status}
+          <label>ФИО<input name="name" maxlength="100" required value="${e(employee?.name)}"></label>
+          <div class="form-row"><label>Подразделение<input name="department" maxlength="100" required value="${e(employee?.department)}"></label><label>Должность<input name="position" maxlength="100" required value="${e(employee?.position)}"></label></div>
+          <label>Роль<span class="select"><select name="role">${Object.entries(employeeRoles).map(([role, name]) => `<option value="${role}" ${employee?.role === role ? 'selected' : ''}>${name}</option>`).join('')}</select></span></label>
+          <label>Первый согласующий<span class="select"><select name="first" required>${personOptions(approvers, employee?.first)}</select></span></label>
+          <label>Второй согласующий<span class="select"><select name="second" required>${personOptions(approvers, employee?.second)}</select></span></label>
+          <label>Лимит на одного согласующего, ₽<input name="limit" inputmode="decimal" maxlength="13" required placeholder="0,00" value="${employee ? String(employee.limit / 100).replace('.', ',') : ''}"><span class="helper">Второй согласующий нужен, только если сумма заявки выше лимита.</span></label>
+          <p id="form-error" class="error" role="alert" hidden></p>
+          <div class="actions"><button class="btn btn-primary" type="submit">${employee ? 'Сохранить изменения' : 'Добавить сотрудника'}</button>${employee ? `<button class="btn ${employee.active ? 'btn-danger' : ''}" type="button" data-act="toggle-employee">${employee.active ? 'Отключить сотрудника' : 'Включить сотрудника'}</button>` : ''}</div>
+        </form>`, '[name="name"]');
+      drawerBody.dataset.employee = employee?.id ?? '';
+    }
+
+    function storeEmployee(employee, message) {
+      const updated = employeeById(employee.id)
+        ? employees.map(person => person.id === employee.id ? employee : person)
+        : [...employees, employee];
+      if (!saveCollection(employeeStorageKey, updated)) return;
+      employees = updated;
+      drawerBody.dataset.employee = employee.id;
+      render();
+      drawer.close();
+      notify(message);
+    }
+
+    function saveEmployee(form, employee) {
+      const fields = new FormData(form);
+      const [name, department, position] = ['name','department','position'].map(field => fields.get(field).trim());
+      if (!name || !department || !position) return showError('Заполните ФИО, подразделение и должность.');
+      const role = fields.get('role');
+      const first = employeeById(fields.get('first'));
+      const second = employeeById(fields.get('second'));
+      if (!canApprove(first) || !canApprove(second)) return showError('Выберите двух доступных согласующих.');
+      if (first.id === second.id || first.id === employee?.id || second.id === employee?.id) return showError('Укажите двух разных согласующих. Сотрудник не может согласовывать собственную заявку.');
+      const limit = amountInCents(fields.get('limit'));
+      if (limit === null) return showError('Введите лимит от нуля, до двух знаков после запятой.');
+      const id = employee?.id ?? Math.max(0, ...employees.map(person => person.id)) + 1;
+      storeEmployee({id,name,department,position,role,first:first.id,second:second.id,limit,active:employee?.active ?? true}, employee ? 'Изменения сохранены' : 'Сотрудник добавлен');
+    }
+
+    function showDecision(item, stage) {
+      const returning = stage === 'rework';
+      openDrawer(returning ? 'Вернуть на доработку' : 'Отклонить заявку', `
+        <form id="decision-form" class="form-grid" data-decision="${stage}">
+          <label>${returning ? 'Что нужно исправить' : 'Причина отклонения'}<textarea name="reason" required maxlength="700"></textarea></label>
+          <p id="form-error" class="error" role="alert" hidden></p>
+          <div class="actions"><button type="submit" class="btn ${returning ? 'btn-primary' : 'btn-danger'}">${returning ? 'Вернуть заявку' : 'Отклонить заявку'}</button><button type="button" class="btn" data-act="cancel">Отмена</button></div>
+        </form>`, 'textarea');
+      drawerBody.dataset.item = item.id;
+    }
+
+    function move(item, stage, label, actor, note = '') {
+      const at = new Date().toISOString();
+      const history = [...item.history, {at, label, actor, note}];
+      if (stage === 'ready') history.push({at, label:'Передано в 1С (демо)', actor:'Демо-обмен'});
+      const updated = {...item, stage, history};
+      if (!commit(updated)) return;
+      if (boardStages.includes(stage)) mobileStage = stage;
+      render();
+      showDetails(updated);
+    }
+
+    function showError(message) {
+      const error = byId('form-error');
+      error.textContent = message;
+      error.hidden = false;
+    }
+
+    function readFile(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.addEventListener('load', () => resolve({name:file.name, data:String(reader.result).split(',')[1]}), {once:true});
+        reader.addEventListener('error', reject, {once:true});
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function saveForm(form, item) {
+      const fields = new FormData(form);
+      const cents = amountInCents(fields.get('amount'));
+      if (cents === null || cents <= 0) {
+        showError('Введите сумму больше нуля, до двух знаков после запятой.');
+        form.elements.amount.focus();
+        return;
+      }
+      const legacy = Boolean(item && !item.initiatorId);
+      const requiredFields = legacy ? ['title', 'party', 'author'] : ['title', 'party'];
+      const required = requiredFields.find(name => !fields.get(name).trim());
+      if (required) {
+        showError('Заполните обязательные поля заявки.');
+        form.elements[required].focus();
+        return;
+      }
+      const initiator = employeeById(item?.initiatorId ?? fields.get('initiator'));
+      const routing = legacy ? {} : buildRoute(initiator, cents);
+      if (routing.error) return showError(routing.error);
+      const selectedFiles = [...form.elements.files.files];
+      if (selectedFiles.reduce((total, file) => total + file.size, 0) > 1024 * 1024) {
+        showError('Выберите вложения суммарным размером до 1 МБ.');
+        return;
+      }
+      const submit = form.querySelector('[type="submit"]');
+      submit.disabled = true;
+      try {
+        const files = selectedFiles.length ? await Promise.all(selectedFiles.map(readFile)) : item?.files ?? [];
+        if (!form.isConnected || !drawer.open) return;
+        const at = new Date().toISOString();
+        const author = legacy ? fields.get('author').trim() : initiator.name;
+        const stage = legacy ? 'manager' : approvalStages[routing.route[0].role];
+        const updated = {
+          id:item?.id ?? Math.max(100, ...items.map(entry => entry.id)) + 1,
+          stage, type:fields.get('type'), title:fields.get('title').trim(), party:fields.get('party').trim(),
+          cents, author, created:item?.created ?? at, note:fields.get('note').trim(), files,
+          history:[...(item?.history ?? []), {at, actor:author, label:item ? 'Исправлено и отправлено на согласование' : 'Заявка создана'}]
+        };
+        if (!legacy) Object.assign(updated, {initiatorId:initiator.id, route:routing.route, routeIndex:0});
+        if (!commit(updated)) return;
+        byId('query').value = '';
+        byId('type').value = 'all';
+        view = 'board';
+        mobileStage = stage;
+        render();
+        showDetails(updated);
+      } catch {
+        if (form.isConnected) showError('Не удалось прочитать вложения. Попробуйте выбрать файлы снова.');
+      } finally {
+        submit.disabled = false;
+      }
+    }
+
+    document.querySelector('.nav').addEventListener('click', event => {
+      const button = event.target.closest('[data-view]');
+      if (!button) return;
+      view = button.dataset.view;
+      byId('query').value = '';
+      byId('type').value = 'all';
+      render();
+    });
+    byId('query').addEventListener('input', () => render({revealMatches:true}));
+    byId('type').addEventListener('change', () => render({revealMatches:true}));
+    byId('stage-picker').addEventListener('change', event => {
+      mobileStage = event.target.value;
+      render();
+    });
+    byId('results').addEventListener('click', event => {
+      const button = event.target.closest('[data-item]');
+      const employee = event.target.closest('[data-employee]');
+      if (button) showDetails(items.find(item => item.id === Number(button.dataset.item)));
+      if (employee) showEmployee(employeeById(employee.dataset.employee));
+    });
+    byId('new').addEventListener('click', () => view === 'employees' ? showEmployee() : showForm());
+    byId('close').addEventListener('click', () => drawer.close());
+    drawer.addEventListener('close', () => {
+      if (drawerTrigger?.isConnected) drawerTrigger.focus({preventScroll:true});
+      else {
+        const selector = view === 'employees' ? `[data-employee="${drawerBody.dataset.employee}"]` : `[data-item="${drawerBody.dataset.item}"]`;
+        const currentCard = byId('results').querySelector(selector);
+        if (currentCard?.getClientRects().length) currentCard.focus({preventScroll:true});
+        else byId('new').focus({preventScroll:true});
+      }
+    });
+    drawerBody.addEventListener('input', event => {
+      if (byId('route-preview') && ['initiator', 'amount'].includes(event.target.name)) updateRoutePreview(event.target.form);
+    });
+    drawerBody.addEventListener('click', event => {
+      const button = event.target.closest('[data-act]');
+      const attachment = event.target.closest('[data-file]');
+      if (!button && !attachment) return;
+      const item = items.find(entry => entry.id === Number(drawerBody.dataset.item));
+      if (attachment && item) {
+        event.preventDefault();
+        const file = item.files[Number(attachment.dataset.file)];
+        const blob = new Blob([Uint8Array.from(atob(file.data), char => char.charCodeAt(0))], {type:'application/octet-stream'});
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = file.name;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        return;
+      }
+      const action = button.dataset.act;
+      if (action === 'toggle-employee') {
+        const employee = employeeById(drawerBody.dataset.employee);
+        if (employee) storeEmployee({...employee, active:!employee.active}, employee.active ? 'Сотрудник отключён' : 'Сотрудник включён');
+      } else if (action === 'cancel') {
+        if (item) showDetails(item);
+        else drawer.close();
+      } else if (action === 'approve' && nextStage[item.stage]) {
+        if (item.route) {
+          const routeIndex = item.routeIndex + 1;
+          const nextApprover = item.route[routeIndex];
+          const stage = nextApprover ? approvalStages[nextApprover.role] : 'ready';
+          move({...item, routeIndex}, stage, 'Согласовано', approvalActor(item));
+        } else {
+          move(item, nextStage[item.stage], 'Согласовано', approvalActor(item));
+        }
+      } else if ((action === 'rework' || action === 'rejected') && nextStage[item.stage]) {
+        showDecision(item, action);
+      } else if (action === 'edit' && item.stage === 'rework') {
+        showForm(item);
+      } else if (action === 'pay' && item.stage === 'ready') {
+        move(item, 'paid', 'Получен статус «Оплачено» (демо)', 'Демо-обмен');
+      }
+    });
+    drawerBody.addEventListener('submit', event => {
+      event.preventDefault();
+      const form = event.target;
+      const item = items.find(entry => entry.id === Number(drawerBody.dataset.item));
+      if (form.id === 'request-form') {
+        saveForm(form, item);
+      } else if (form.id === 'employee-form') {
+        saveEmployee(form, employeeById(drawerBody.dataset.employee));
+      } else if (form.id === 'decision-form' && item && nextStage[item.stage]) {
+        const note = new FormData(form).get('reason').trim();
+        if (!note) {
+          showError('Впишите комментарий к решению.');
+          return;
+        }
+        const stage = form.dataset.decision;
+        move(item, stage, stage === 'rework' ? 'Возвращено на доработку' : 'Отклонено', approvalActor(item), note);
+      }
+    });
+    window.addEventListener('storage', event => {
+      if (!browserStorage) return;
+      if (event.key === storageKey) items = load(storageKey, seed);
+      else if (event.key === employeeStorageKey) employees = load(employeeStorageKey, seedEmployees);
+      else return;
+      if (drawer.open) drawer.close();
+      render();
+      notify('Данные обновлены из другой вкладки.');
+    });
+    render();
+  </script>
+</body>
+</html>
